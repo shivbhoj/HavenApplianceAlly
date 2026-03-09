@@ -9,88 +9,38 @@ interface ChatInterfaceProps {
   onClearInitial?: () => void;
 }
 
-function renderMessageContent(content: string) {
-  // Simple markdown-like rendering
-  const lines = content.split("\n");
-  const elements: React.ReactNode[] = [];
-  let i = 0;
+const SUGGESTED_PROMPTS: { icon: string; text: string }[] = [
+  { icon: "📅", text: "What maintenance should I do this month?" },
+  { icon: "🛡️", text: "Which appliances have warranties expiring soon?" },
+  { icon: "🔧", text: "How do I clean my fridge coils?" },
+  { icon: "💧", text: "When should I replace my water heater?" },
+  { icon: "👕", text: "What are signs my washer needs servicing?" },
+];
 
-  while (i < lines.length) {
-    const line = lines[i];
-
-    if (line.startsWith("### ")) {
-      elements.push(
-        <h3 key={i} className="font-semibold text-sm mt-2 mb-1">
-          {line.slice(4)}
-        </h3>,
-      );
-    } else if (line.startsWith("## ")) {
-      elements.push(
-        <h2 key={i} className="font-semibold mt-2 mb-1">
-          {line.slice(3)}
-        </h2>,
-      );
-    } else if (line.startsWith("**") && line.endsWith("**")) {
-      elements.push(
-        <p key={i} className="font-semibold">
-          {line.slice(2, -2)}
-        </p>,
-      );
-    } else if (line.startsWith("- ") || line.startsWith("• ")) {
-      elements.push(
-        <li key={i} className="ml-4 list-disc">
-          {formatInline(line.slice(2))}
-        </li>,
-      );
-    } else if (/^\d+\. /.test(line)) {
-      const text = line.replace(/^\d+\. /, "");
-      elements.push(
-        <li key={i} className="ml-4 list-decimal">
-          {formatInline(text)}
-        </li>,
-      );
-    } else if (line.trim() === "") {
-      elements.push(<div key={i} className="h-1" />);
-    } else {
-      elements.push(
-        <p key={i} className="leading-relaxed">
-          {formatInline(line)}
-        </p>,
-      );
-    }
-    i++;
-  }
-
-  return elements;
-}
-
-function formatInline(text: string): React.ReactNode {
-  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
-  return parts.map((part, i) => {
-    if (part.startsWith("**") && part.endsWith("**")) {
-      return <strong key={i}>{part.slice(2, -2)}</strong>;
-    }
-    if (part.startsWith("`") && part.endsWith("`")) {
-      return (
-        <code
-          key={i}
-          className="bg-black/10 px-1 py-0.5 rounded text-xs font-mono"
-        >
-          {part.slice(1, -1)}
-        </code>
-      );
-    }
-    return part;
+function renderContent(text: string): React.ReactNode[] {
+  return text.split("\n").map((line, i) => {
+    if (line.startsWith("### "))
+      return <h3 key={i} className="font-bold text-sm mt-2">{line.slice(4)}</h3>;
+    if (line.startsWith("## "))
+      return <h2 key={i} className="font-bold mt-2">{line.slice(3)}</h2>;
+    if (line.startsWith("- ") || line.startsWith("• "))
+      return <li key={i} className="ml-4 list-disc">{inlineFmt(line.slice(2))}</li>;
+    if (/^\d+\. /.test(line))
+      return <li key={i} className="ml-4 list-decimal">{inlineFmt(line.replace(/^\d+\. /, ""))}</li>;
+    if (line.trim() === "") return <div key={i} className="h-1" />;
+    return <p key={i} className="leading-relaxed">{inlineFmt(line)}</p>;
   });
 }
 
-const SUGGESTED_QUESTIONS = [
-  "What maintenance should I do this month?",
-  "Which appliances have warranties expiring soon?",
-  "How do I clean my refrigerator coils?",
-  "When should I replace my water heater?",
-  "What are signs my washer needs servicing?",
-];
+function inlineFmt(text: string): React.ReactNode {
+  return text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((part, i) => {
+    if (part.startsWith("**") && part.endsWith("**"))
+      return <strong key={i}>{part.slice(2, -2)}</strong>;
+    if (part.startsWith("`") && part.endsWith("`"))
+      return <code key={i} className="bg-black/10 px-1 py-0.5 rounded text-xs font-mono">{part.slice(1, -1)}</code>;
+    return part;
+  });
+}
 
 export default function ChatInterface({
   appliances,
@@ -105,12 +55,8 @@ export default function ChatInterface({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const initialSentRef = useRef(false);
 
-  const scrollToBottom = () => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
   useEffect(() => {
-    scrollToBottom();
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   const sendMessage = useCallback(
@@ -118,65 +64,44 @@ export default function ChatInterface({
       if (!text.trim() || isStreaming) return;
       setError(null);
 
-      const userMsg: ChatMessage = {
-        role: "user",
-        content: text.trim(),
-        timestamp: Date.now(),
-      };
-
-      const updatedMessages = [...messages, userMsg];
-      setMessages(updatedMessages);
+      const userMsg: ChatMessage = { role: "user", content: text.trim(), timestamp: Date.now() };
+      const updated = [...messages, userMsg];
+      setMessages(updated);
       setInput("");
       setIsStreaming(true);
 
-      const assistantMsg: ChatMessage = {
-        role: "assistant",
-        content: "",
-        timestamp: Date.now(),
-      };
-      setMessages([...updatedMessages, assistantMsg]);
+      const assistantMsg: ChatMessage = { role: "assistant", content: "", timestamp: Date.now() };
+      setMessages([...updated, assistantMsg]);
 
       try {
-        const response = await fetch("/api/chat", {
+        const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            messages: updatedMessages.map((m) => ({
-              role: m.role,
-              content: m.content,
-            })),
+            messages: updated.map((m) => ({ role: m.role, content: m.content })),
             appliances,
           }),
         });
 
-        if (!response.ok) {
-          throw new Error(`Server error: ${response.status}`);
-        }
+        if (!res.ok) throw new Error(`Server error ${res.status}`);
 
-        const reader = response.body?.getReader();
-        if (!reader) throw new Error("No response body");
+        const reader = res.body?.getReader();
+        if (!reader) throw new Error("No response stream");
 
         const decoder = new TextDecoder();
-        let accumulated = "";
-
+        let acc = "";
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          accumulated += decoder.decode(value, { stream: true });
+          acc += decoder.decode(value, { stream: true });
           setMessages((prev) => {
             const next = [...prev];
-            next[next.length - 1] = {
-              ...next[next.length - 1],
-              content: accumulated,
-            };
+            next[next.length - 1] = { ...next[next.length - 1], content: acc };
             return next;
           });
         }
-      } catch (err) {
-        const errMsg =
-          err instanceof Error ? err.message : "Something went wrong";
-        setError(errMsg);
-        // Remove the empty assistant message on error
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Something went wrong");
         setMessages((prev) => prev.slice(0, -1));
       } finally {
         setIsStreaming(false);
@@ -185,7 +110,6 @@ export default function ChatInterface({
     [messages, appliances, isStreaming],
   );
 
-  // Handle initial message from "Ask AI" button on a card
   useEffect(() => {
     if (initialMessage && !initialSentRef.current) {
       initialSentRef.current = true;
@@ -194,7 +118,6 @@ export default function ChatInterface({
     }
   }, [initialMessage, sendMessage, onClearInitial]);
 
-  // Reset ref when initialMessage changes
   useEffect(() => {
     if (!initialMessage) initialSentRef.current = false;
   }, [initialMessage]);
@@ -206,118 +129,128 @@ export default function ChatInterface({
     }
   }
 
-  function clearChat() {
-    setMessages([]);
-    setError(null);
-  }
+  const isEmpty = messages.length === 0;
 
   return (
-    <div className="flex flex-col h-full bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+    <div className="flex flex-col h-full bg-gray-50">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gradient-to-r from-haven-600 to-haven-700">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
-            <span className="text-lg">🏠</span>
-          </div>
-          <div>
-            <h2 className="text-white font-semibold text-sm">HavenAlly</h2>
-            <p className="text-haven-200 text-xs">AI Appliance Assistant</p>
+      <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3">
+        <div className="w-11 h-11 bg-haven-600 rounded-2xl flex items-center justify-center shadow-sm shrink-0">
+          <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+          </svg>
+        </div>
+        <div className="flex-1">
+          <h2 className="font-bold text-gray-900 text-base leading-tight">HavenAlly AI Assistant</h2>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <span className="w-2 h-2 rounded-full bg-green-500" />
+            <span className="text-xs text-gray-500">AI Assistant Active</span>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {messages.length > 0 && (
-            <button
-              onClick={clearChat}
-              className="text-xs text-haven-200 hover:text-white transition-colors"
-            >
-              Clear chat
-            </button>
-          )}
-          <div
-            className={`w-2 h-2 rounded-full ${isStreaming ? "bg-amber-400 animate-pulse" : "bg-green-400"}`}
-          />
-        </div>
+        {messages.length > 0 && (
+          <button
+            onClick={() => { setMessages([]); setError(null); }}
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin">
-        {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-center gap-4 py-8">
-            <div className="text-4xl">🔧</div>
-            <div>
-              <p className="font-semibold text-gray-700">
-                Hi! I&apos;m HavenAlly
-              </p>
-              <p className="text-sm text-gray-500 mt-1">
-                Ask me anything about your appliances — maintenance, troubleshooting, warranties, and more.
-              </p>
-            </div>
-            <div className="w-full space-y-2">
-              <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">
-                Try asking
-              </p>
-              {SUGGESTED_QUESTIONS.map((q) => (
-                <button
-                  key={q}
-                  onClick={() => sendMessage(q)}
-                  className="w-full text-left text-sm px-3 py-2 rounded-lg border border-gray-200 hover:border-haven-300 hover:bg-haven-50 text-gray-600 hover:text-haven-700 transition-colors"
-                >
-                  {q}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {messages.map((msg, idx) => (
-          <div
-            key={idx}
-            className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-          >
-            {msg.role === "assistant" && (
-              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-haven-500 to-haven-700 flex items-center justify-center shrink-0 mt-1 mr-2">
-                <span className="text-sm">🏠</span>
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 scrollbar-thin">
+        {isEmpty ? (
+          <>
+            {/* Welcome bubble */}
+            <div className="flex gap-3">
+              <div className="w-9 h-9 bg-haven-600 rounded-full flex items-center justify-center shrink-0 mt-0.5">
+                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                </svg>
               </div>
-            )}
-            <div
-              className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm ${
-                msg.role === "user"
-                  ? "bg-haven-600 text-white rounded-br-sm"
-                  : "bg-gray-100 text-gray-800 rounded-bl-sm"
-              }`}
-            >
-              {msg.role === "assistant" ? (
-                <div className="prose-chat space-y-0.5">
-                  {msg.content ? (
-                    renderMessageContent(msg.content)
+              <div>
+                <p className="text-xs text-gray-500 mb-1 font-medium">HavenAlly</p>
+                <div className="bg-white rounded-2xl rounded-tl-sm border border-gray-200 p-4 shadow-sm max-w-sm">
+                  <p className="text-haven-600 font-bold text-sm mb-2 flex items-center gap-1.5">
+                    🔧 WELCOME
+                  </p>
+                  <p className="text-gray-700 text-sm leading-relaxed">
+                    Hi! I&apos;m HavenAlly. Ask me anything about your appliances — maintenance, troubleshooting, and more.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Suggested prompts */}
+            <div>
+              <p className="text-[10px] font-bold tracking-widest text-gray-400 uppercase mb-2 px-1">
+                Suggested Prompts
+              </p>
+              <div className="space-y-2">
+                {SUGGESTED_PROMPTS.map((p) => (
+                  <button
+                    key={p.text}
+                    onClick={() => sendMessage(p.text)}
+                    className="w-full flex items-center gap-3 bg-white border border-gray-200 rounded-2xl px-4 py-3 text-left hover:border-haven-300 hover:bg-haven-50 transition-colors shadow-sm"
+                  >
+                    <span className="text-xl shrink-0">{p.icon}</span>
+                    <span className="text-sm text-gray-700 font-medium">{p.text}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            {messages.map((msg, i) => (
+              <div key={i} className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                {msg.role === "assistant" && (
+                  <div className="w-9 h-9 bg-haven-600 rounded-full flex items-center justify-center shrink-0 mt-0.5">
+                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                    </svg>
+                  </div>
+                )}
+                <div
+                  className={`max-w-[82%] rounded-2xl px-4 py-3 text-sm shadow-sm ${
+                    msg.role === "user"
+                      ? "bg-haven-600 text-white rounded-tr-sm"
+                      : "bg-white border border-gray-200 text-gray-800 rounded-tl-sm"
+                  }`}
+                >
+                  {msg.role === "assistant" ? (
+                    msg.content ? (
+                      <div className="space-y-0.5">{renderContent(msg.content)}</div>
+                    ) : (
+                      <span className="inline-flex gap-1 py-1">
+                        {[0, 150, 300].map((d) => (
+                          <span key={d} className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: `${d}ms` }} />
+                        ))}
+                      </span>
+                    )
                   ) : (
-                    <span className="inline-flex gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: "0ms" }} />
-                      <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: "150ms" }} />
-                      <span className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: "300ms" }} />
-                    </span>
+                    msg.content
                   )}
                 </div>
-              ) : (
-                msg.content
-              )}
-            </div>
-          </div>
-        ))}
-
-        {error && (
-          <div className="flex justify-center">
-            <div className="bg-red-50 border border-red-200 text-red-700 text-xs px-4 py-2 rounded-lg">
-              ⚠️ {error}. Please try again.
-            </div>
-          </div>
+              </div>
+            ))}
+          </>
         )}
 
+        {error && (
+          <div className="text-center">
+            <span className="bg-red-50 border border-red-200 text-red-600 text-xs px-3 py-1.5 rounded-lg inline-block">
+              ⚠️ {error}
+            </span>
+          </div>
+        )}
         <div ref={bottomRef} />
       </div>
 
       {/* Input */}
-      <div className="border-t border-gray-100 p-3">
+      <div className="bg-white border-t border-gray-200 px-4 py-3">
         <div className="flex gap-2 items-end">
           <textarea
             ref={inputRef}
@@ -327,36 +260,26 @@ export default function ChatInterface({
             placeholder="Ask about your appliances..."
             rows={1}
             disabled={isStreaming}
-            className="flex-1 resize-none px-3 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-haven-500 focus:border-transparent disabled:bg-gray-50 disabled:text-gray-400 max-h-32 scrollbar-thin"
-            style={{ minHeight: "40px" }}
+            className="flex-1 resize-none px-4 py-2.5 bg-gray-100 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-haven-400 disabled:opacity-50 max-h-32 scrollbar-thin placeholder-gray-400"
+            style={{ minHeight: "42px" }}
             onInput={(e) => {
-              const target = e.target as HTMLTextAreaElement;
-              target.style.height = "40px";
-              target.style.height = Math.min(target.scrollHeight, 128) + "px";
+              const t = e.target as HTMLTextAreaElement;
+              t.style.height = "42px";
+              t.style.height = Math.min(t.scrollHeight, 128) + "px";
             }}
           />
           <button
             onClick={() => sendMessage(input)}
             disabled={!input.trim() || isStreaming}
-            className="px-3 py-2 bg-haven-600 hover:bg-haven-700 text-white rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+            className="w-11 h-11 flex items-center justify-center bg-haven-600 hover:bg-haven-700 text-white rounded-2xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0 shadow-sm"
           >
-            <svg
-              className="w-5 h-5"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
-              />
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
             </svg>
           </button>
         </div>
-        <p className="text-xs text-gray-400 mt-1.5 text-center">
-          Powered by Claude · Enter to send · Shift+Enter for new line
+        <p className="text-[10px] text-gray-400 text-center mt-2 tracking-wider uppercase">
+          Powered by Claude · Enter to send
         </p>
       </div>
     </div>

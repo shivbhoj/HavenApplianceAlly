@@ -1,6 +1,12 @@
 "use client";
 
-import { Appliance, CATEGORY_ICONS, CATEGORY_LABELS } from "@/types";
+import {
+  Appliance,
+  CATEGORY_ICONS,
+  CATEGORY_LABELS,
+  CATEGORY_BADGE_COLORS,
+  CATEGORY_BG_COLORS,
+} from "@/types";
 
 interface ApplianceCardProps {
   appliance: Appliance;
@@ -9,63 +15,44 @@ interface ApplianceCardProps {
   onAsk: (appliance: Appliance) => void;
 }
 
-function getWarrantyStatus(warrantyExpiry: string) {
-  if (!warrantyExpiry) return { label: "No warranty info", color: "gray" };
+function getWarrantyLabel(warrantyExpiry: string): string {
+  if (!warrantyExpiry) return "";
   const expiry = new Date(warrantyExpiry);
-  const now = new Date();
   const daysLeft = Math.floor(
-    (expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
+    (expiry.getTime() - Date.now()) / (1000 * 60 * 60 * 24),
   );
-
-  if (daysLeft < 0)
-    return { label: "Warranty expired", color: "red", daysLeft };
-  if (daysLeft <= 30)
-    return {
-      label: `Expires in ${daysLeft}d`,
-      color: "amber",
-      daysLeft,
-    };
-  if (daysLeft <= 90)
-    return {
-      label: `Expires in ${Math.round(daysLeft / 30)}mo`,
-      color: "yellow",
-      daysLeft,
-    };
-  return {
-    label: `Warranty until ${expiry.toLocaleDateString("en-US", { month: "short", year: "numeric" })}`,
-    color: "green",
-    daysLeft,
-  };
+  if (daysLeft < 0) return "Expired";
+  const year = expiry.getFullYear();
+  const month = expiry.toLocaleString("en-US", { month: "short" });
+  return `${month} ${year}`;
 }
 
-function getMaintenanceStatus(lastMaintenanceDate: string) {
-  if (!lastMaintenanceDate) return { label: "No maintenance recorded", color: "gray" };
-  const last = new Date(lastMaintenanceDate);
-  const now = new Date();
+function getMaintenanceInfo(lastMaintenanceDate: string): {
+  label: string;
+  isDue: boolean;
+} {
+  if (!lastMaintenanceDate) {
+    return { label: "No maintenance recorded", isDue: true };
+  }
   const daysAgo = Math.floor(
-    (now.getTime() - last.getTime()) / (1000 * 60 * 60 * 24),
+    (Date.now() - new Date(lastMaintenanceDate).getTime()) /
+      (1000 * 60 * 60 * 24),
   );
-
-  if (daysAgo > 365)
+  const isDue = daysAgo > 365;
+  if (daysAgo < 1) return { label: "Maintained today", isDue: false };
+  if (daysAgo === 1) return { label: "Maintained yesterday", isDue: false };
+  if (daysAgo < 30)
+    return { label: `Last Maint: ${daysAgo}d ago`, isDue: false };
+  if (daysAgo < 365)
     return {
-      label: `Maintained ${Math.floor(daysAgo / 365)}y ago`,
-      color: "red",
+      label: `Last Maint: ${Math.floor(daysAgo / 30)}mo ago`,
+      isDue: false,
     };
-  if (daysAgo > 180)
-    return { label: `Maintained ${Math.floor(daysAgo / 30)}mo ago`, color: "amber" };
   return {
-    label: `Maintained ${daysAgo}d ago`,
-    color: "green",
+    label: `Maintenance Due: ${daysAgo}d ago`,
+    isDue: true,
   };
 }
-
-const colorClasses = {
-  gray: "bg-gray-100 text-gray-600",
-  green: "bg-green-100 text-green-700",
-  amber: "bg-amber-100 text-amber-700",
-  yellow: "bg-yellow-100 text-yellow-700",
-  red: "bg-red-100 text-red-700",
-};
 
 export default function ApplianceCard({
   appliance,
@@ -73,31 +60,119 @@ export default function ApplianceCard({
   onDelete,
   onAsk,
 }: ApplianceCardProps) {
-  const warranty = getWarrantyStatus(appliance.warrantyExpiry);
-  const maintenance = getMaintenanceStatus(appliance.lastMaintenanceDate);
   const icon = CATEGORY_ICONS[appliance.category] ?? "🔧";
-  const categoryLabel = CATEGORY_LABELS[appliance.category] ?? appliance.category;
+  const categoryLabel =
+    CATEGORY_LABELS[appliance.category] ?? appliance.category;
+  const badgeColor =
+    CATEGORY_BADGE_COLORS[appliance.category] ?? "bg-gray-100 text-gray-600";
+  const bgGradient =
+    CATEGORY_BG_COLORS[appliance.category] ?? "from-gray-50 to-gray-100";
+  const warrantyLabel = getWarrantyLabel(appliance.warrantyExpiry);
+  const { label: maintenanceLabel, isDue } = getMaintenanceInfo(
+    appliance.lastMaintenanceDate,
+  );
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow p-4 flex flex-col gap-3">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-2xl shrink-0">{icon}</span>
-          <div className="min-w-0">
-            <h3 className="font-semibold text-gray-900 truncate">
+    <div
+      className={`bg-white rounded-2xl overflow-hidden shadow-sm transition-shadow hover:shadow-md ${
+        isDue ? "border-2 border-orange-300" : "border border-gray-200"
+      }`}
+    >
+      {/* Top content */}
+      <div className="p-4 flex gap-3">
+        {/* Image / icon thumbnail */}
+        <div
+          className={`w-16 h-16 rounded-xl bg-gradient-to-br ${bgGradient} flex items-center justify-center text-3xl shrink-0`}
+        >
+          {icon}
+        </div>
+
+        {/* Info */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="font-bold text-gray-900 text-[15px] leading-tight">
               {appliance.name}
             </h3>
-            <p className="text-sm text-gray-500 truncate">
-              {appliance.brand} {appliance.model}
-            </p>
+            {isDue && (
+              <span className="text-orange-500 shrink-0 mt-0.5">
+                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+                </svg>
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-gray-500 mt-0.5 truncate">
+            {[appliance.brand, appliance.model].filter(Boolean).join(" ")}
+            {appliance.location ? ` • ${appliance.location}` : ""}
+          </p>
+          {/* Category badge */}
+          <span
+            className={`inline-block mt-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide ${badgeColor}`}
+          >
+            {categoryLabel}
+          </span>
+
+          {/* Dates row */}
+          <div className="flex flex-wrap gap-3 mt-2">
+            {appliance.purchaseDate && (
+              <span className="flex items-center gap-1 text-xs text-gray-500">
+                <svg
+                  className="w-3.5 h-3.5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                  />
+                </svg>
+                Bought: {new Date(appliance.purchaseDate).getFullYear()}
+              </span>
+            )}
+            {warrantyLabel && (
+              <span className="flex items-center gap-1 text-xs text-gray-500">
+                <svg
+                  className="w-3.5 h-3.5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
+                  />
+                </svg>
+                {warrantyLabel}
+              </span>
+            )}
           </div>
         </div>
-        <div className="flex gap-1 shrink-0">
+      </div>
+
+      {/* Footer */}
+      <div
+        className={`px-4 py-2.5 border-t flex items-center justify-between ${
+          isDue
+            ? "border-orange-200 bg-orange-50"
+            : "border-gray-100 bg-gray-50/50"
+        }`}
+      >
+        <span
+          className={`text-sm font-medium ${isDue ? "text-orange-600" : "text-gray-500"}`}
+        >
+          {maintenanceLabel}
+        </span>
+
+        <div className="flex items-center gap-0.5">
           <button
             onClick={() => onAsk(appliance)}
-            className="p-1.5 text-haven-600 hover:bg-haven-50 rounded-lg transition-colors"
-            title="Ask AI about this appliance"
+            className="p-2 text-gray-400 hover:text-haven-600 hover:bg-haven-50 rounded-lg transition-colors"
+            title="Ask AI"
           >
             <svg
               className="w-4 h-4"
@@ -115,8 +190,8 @@ export default function ApplianceCard({
           </button>
           <button
             onClick={() => onEdit(appliance)}
-            className="p-1.5 text-gray-500 hover:bg-gray-50 rounded-lg transition-colors"
-            title="Edit appliance"
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            title="Edit"
           >
             <svg
               className="w-4 h-4"
@@ -128,22 +203,17 @@ export default function ApplianceCard({
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 strokeWidth={2}
-                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
               />
             </svg>
           </button>
           <button
             onClick={() => {
-              if (
-                window.confirm(
-                  `Delete ${appliance.name}? This cannot be undone.`,
-                )
-              ) {
+              if (window.confirm(`Delete "${appliance.name}"?`))
                 onDelete(appliance.id);
-              }
             }}
-            className="p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-500 rounded-lg transition-colors"
-            title="Delete appliance"
+            className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+            title="Delete"
           >
             <svg
               className="w-4 h-4"
@@ -161,44 +231,6 @@ export default function ApplianceCard({
           </button>
         </div>
       </div>
-
-      {/* Meta */}
-      <div className="flex flex-wrap gap-1.5">
-        <span className="text-xs bg-haven-50 text-haven-700 px-2 py-0.5 rounded-full font-medium">
-          {categoryLabel}
-        </span>
-        {appliance.location && (
-          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
-            📍 {appliance.location}
-          </span>
-        )}
-        {appliance.purchaseDate && (
-          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
-            Bought {new Date(appliance.purchaseDate).getFullYear()}
-          </span>
-        )}
-      </div>
-
-      {/* Status badges */}
-      <div className="flex flex-col gap-1.5">
-        <div
-          className={`text-xs px-2 py-1 rounded-lg font-medium ${colorClasses[warranty.color as keyof typeof colorClasses]}`}
-        >
-          🛡️ {warranty.label}
-        </div>
-        <div
-          className={`text-xs px-2 py-1 rounded-lg font-medium ${colorClasses[maintenance.color as keyof typeof colorClasses]}`}
-        >
-          🔧 {maintenance.label}
-        </div>
-      </div>
-
-      {/* Notes */}
-      {appliance.notes && (
-        <p className="text-xs text-gray-500 italic truncate border-t border-gray-100 pt-2">
-          {appliance.notes}
-        </p>
-      )}
     </div>
   );
 }
